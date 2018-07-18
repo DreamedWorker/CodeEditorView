@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <declare-styleable name="CodeEditorView">
+        <attr name="backgroundColor" format="reference|color"/>
+        <attr name="textSize" format="reference|dimension"/>
+		<attr name="cursorWidth" format="reference|dimension"/>
+    </declare-styleable>
+</resources>

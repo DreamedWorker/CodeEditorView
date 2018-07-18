@@ -1,0 +1,6 @@
+# view res/layout/main.xml #generated:8
+-keep class com.summerain.widget.CodeEditorView { <init>(...); }
+
+# view AndroidManifest.xml #generated:24
+-keep class com.summerain.widget.MainActivity { <init>(...); }
+
