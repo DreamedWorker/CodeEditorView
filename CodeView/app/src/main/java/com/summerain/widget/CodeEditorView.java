@@ -215,7 +215,7 @@ public class CodeEditorView extends View
 		}
 		return true;
 	}
-	
+
 	/*工具方法*/
 	//重写方法使view可编辑
     @Override
@@ -359,8 +359,7 @@ public class CodeEditorView extends View
         }
         invalidate();
     }
-	
-	
+
 	//绘制行号
 	private void drawLineNumber(Canvas canvas)
 	{
@@ -476,12 +475,37 @@ public class CodeEditorView extends View
 		String[] list = str.split("\n");
 		int position = list.length;
 		//拼接
-		String result = mArrayListText.get(mCursorInLine - 1).toString().substring(0, mCursorPosition) + str + mArrayListText.get(mCursorInLine - 1).toString().substring(mCursorPosition, mArrayListText.get(mCursorInLine - 1).toString().length());
-        mArrayListText.remove(mCursorInLine - 1);
-        mArrayListText.add(mCursorInLine - 1, result);
-		//更新位置
-		mCursorPosition += str.length();
-		checkCursorPosition();
+		if (position == 1)//文本只有一行
+		{
+			String result = mArrayListText.get(mCursorInLine - 1).toString().substring(0, mCursorPosition) + str + mArrayListText.get(mCursorInLine - 1).toString().substring(mCursorPosition, mArrayListText.get(mCursorInLine - 1).toString().length());
+			mArrayListText.remove(mCursorInLine - 1);
+			mArrayListText.add(mCursorInLine - 1, result);
+			//更新位置
+			mCursorPosition += str.length();
+			checkCursorPosition();
+		}
+		else//文本多行的情况
+		{
+			//获取当前全部文本
+			mText = getText();
+			//计算光标位置
+			int cursorPosition = 0;
+			//记录数据
+			float[] data = new float[]{mScrollX,mScrollY,mCursorPosition,mCursorInLine};
+			for (int i = 0;i < mCursorInLine - 1;i++)
+			{
+				cursorPosition += mArrayListText.get(i).length();
+			}
+			cursorPosition += mArrayListText.get(mCursorInLine - 1).length();
+			//插入文本
+			String result = mText.substring(0, cursorPosition) + str + mText.substring(cursorPosition, mText.length());
+			setText(result);
+			//更新光标位置
+			mScrollX = data[0];
+			mScrollY = data[1];
+			mCursorInLine = (int)data[3] + position - 1;
+			mCursorPosition = list[position - 1].length();
+		}
         invalidate(); 
     }
 
@@ -493,7 +517,7 @@ public class CodeEditorView extends View
         mArrayListText.add(mCursorInLine - 1, result);
         invalidate();
     }
-	
+
 	//计算工具类
 	class DrawUtils
 	{
