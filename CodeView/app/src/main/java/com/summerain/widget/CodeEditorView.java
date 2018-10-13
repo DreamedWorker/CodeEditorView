@@ -1,15 +1,42 @@
+/*
+ ┏┛┻━━━┛┻┓
+ ┃｜｜｜｜｜｜｜┃
+ ┃　　　━　　　┃
+ ┃　┳┛ 　┗┳ ┃
+ ┃　　　　　　　┃
+ ┃　　　┻　　　┃
+ ┃　　　　　　　┃
+ ┗━┓　　　┏━┛
+ 　　┃　程　┃　　
+ 　　┃　序　┃　　
+ 　　┃　之　┃　　
+ 　　┃　宠　┃
+ 　　┃　　　┗━━━┓
+ 　　┃编译与我同在　┣┓
+ 　　┃专克 bug宠物 ┃
+ 　　┗┓┓┏━┳┓┏┛
+ 　　　┃┫┫　┃┫┫
+ 　　　┗┻┛　┗┻┛
+*/
 package com.summerain.widget;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Rect;
 import android.graphics.Typeface;
 import android.text.InputType;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewTreeObserver.OnGlobalLayoutListener;
 import android.view.inputmethod.BaseInputConnection;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputConnection;
@@ -17,9 +44,6 @@ import android.view.inputmethod.InputMethodManager;
 import java.util.ArrayList;
 import java.util.Timer;
 import java.util.TimerTask;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
-import android.graphics.Rect;
 
 /* 编辑框
  * class CodeEditorView
@@ -35,9 +59,13 @@ public class CodeEditorView extends View
 	private static final int DEFAULT_TEXT_LINENUMBER_COLOR = 0x802b2b2b;
 	private static final int DEFAULT_TEXT_SIZE = 36;
 	private static final int DEFAULT_CANVAS_CURSOR_WIDTH = 2;
-
+	private static final int VIEW_TOUCH_TYPE_CLICK = 0;//点击
+	private static final int VIEW_TOUCH_TYPE_SCROLL = 1;//滑动
+	private static final int VIEW_TOUCH_TYPE_CLICK_LONG = 2;//长按
+	
 	//
 	private Context mContext;//上下文
+	private ClipboardManager mClipboardManager;
 	private InputMethodManager mInputMethodManager;
 	private DrawUtils mDrawUtils;//绘制工具
 	private Paint mLineNumberPaint;//行号画笔
@@ -50,7 +78,9 @@ public class CodeEditorView extends View
 
 	//图标
 	private Bitmap mTextSeleteMiddleLightBitmap = null;
-
+	private Bitmap mTextSeleteLeftLightBitmap = null;
+	private Bitmap mTextSeleteRightLightBitmap = null;
+	
 	//配色&参数
 	private float mTextSize;
 	private int mBackgroundColor;
@@ -63,7 +93,9 @@ public class CodeEditorView extends View
 	private boolean mShowCursor = true;//是否显示光标 动态改变
 	private boolean isViewRun = false;//控件是否正在显示
 	private boolean isTouching = false;//是否正在按着
+	private float mBaseTextHeight = 0;
 	private long mTouchTime = 0;//按住的时间
+	private int mTouchType = 0;//触摸类型
 	private long mClickTime = 0;//按下时的瞬间时间
 	private int mCacheDrawLine = 3;//缓存行数 默认3
 	private float mScrollX = 0;//原点
@@ -91,6 +123,7 @@ public class CodeEditorView extends View
         super(context, attrs);
         this.mContext = context;
 		mInputMethodManager = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+		mClipboardManager = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
 		mDrawUtils = new DrawUtils();
 		//读取参数
 		TypedArray mTypedArray = context.obtainStyledAttributes(attrs, R.styleable.CodeEditorView);
@@ -99,7 +132,8 @@ public class CodeEditorView extends View
 		mCursorWidth = mTypedArray.getDimension(R.styleable.CodeEditorView_cursorWidth, DEFAULT_CANVAS_CURSOR_WIDTH);
 		//缓存图标
 		mTextSeleteMiddleLightBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.text_selete_handle_middle_light);
-
+		mTextSeleteLeftLightBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.text_selete_handle_left_light);
+		mTextSeleteRightLightBitmap = BitmapFactory.decodeResource(getResources(), R.drawable.text_selete_handle_right_light);
         //初始化
 		initPaint();
 		init();
@@ -135,6 +169,23 @@ public class CodeEditorView extends View
         setFocusable(true);
         setFocusableInTouchMode(true);
 		setText(mText);
+
+		//设置键盘监听器
+		getViewTreeObserver().addOnGlobalLayoutListener(new OnGlobalLayoutListener(){
+				@Override
+				public void onGlobalLayout()
+				{
+					Rect r = new Rect();
+					//获取当前界面可视部分
+				    CodeEditorView.this.getWindowVisibleDisplayFrame(r);
+					//获取屏幕的高度
+					int screenHeight =  CodeEditorView.this.getRootView().getHeight();
+					//记录
+					mBaseTextHeight = r.bottom - r.top - ((MainActivity)mContext).getActionBar().getHeight();
+					//跳转
+					jumpToCursor();
+				}		
+			});
 	}
 
     //view被创建时
@@ -195,6 +246,12 @@ public class CodeEditorView extends View
 				//如果单个方向移动距离过小，改为0
 				//if(Math.abs(mDistanceX) < 10) mDistanceX = 0;
 				//if(Math.abs(mDistanceY) < 10) mDistanceY = 0;
+				//检查是否长按了
+				if (Math.pow(mDistanceX, 2) <= 1.5 && Math.pow(mDistanceY, 2) <= 1.5 && (System.currentTimeMillis() - mTouchTime) >= 2000 && mTouchType != VIEW_TOUCH_TYPE_CLICK_LONG)
+				{
+					mTouchType = VIEW_TOUCH_TYPE_CLICK_LONG;
+					Log.e(TAG,"你长按了");
+				}
 				mScrollX = mLastScrollX + mDistanceX;
                 mScrollY = mLastScrollY + mDistanceY;
 				//检查原点合法性
@@ -304,6 +361,39 @@ public class CodeEditorView extends View
             mCursorInLine = mArrayListText.size(); 
         }
     }
+
+	//跳转至坐标
+	private void jumpToCursor()
+	{
+		float textHeight = mTextPaint.descent() - mTextPaint.ascent();
+		//判断位置并移动
+		/* Y轴部分 */
+		//计算当前位置
+		float height = mCursorInLine * textHeight - mScrollY;
+		//如果位于基础高度之下
+		if ((height + mTextSeleteMiddleLightBitmap.getHeight()) > mBaseTextHeight)
+		{
+			//计算差值
+			float padding = height - mBaseTextHeight;
+			//重新分配Y值
+			mScrollY += padding + mTextSeleteMiddleLightBitmap.getHeight();
+			if (mScrollY < 0) mScrollY = 0;
+			mLastScrollY = mScrollY;
+		}
+		//如果位于上方隐藏
+		if (height < textHeight)
+		{
+			//计算差值
+			float padding = textHeight;
+			//重新分配Y值
+			mScrollY -= padding;
+			if (mScrollY < 0) mScrollY = 0;
+			mLastScrollY = mScrollY;
+		}
+
+		/* X轴部分 */
+		//先不做| ू•ૅω•́)ᵎᵎᵎ
+	}
 
 	//点击回车键情景判断
     private void enterHandle()
@@ -462,6 +552,21 @@ public class CodeEditorView extends View
 		}
 	}
 
+	//获取剪切板内容
+	private String getClipboardText()
+	{
+		if (!mClipboardManager.hasPrimaryClip()) return "";
+        ClipData clipData = mClipboardManager.getPrimaryClip();
+        //获取 ClipDescription
+        //ClipDescription clipDescription = mClipboardManager.getPrimaryClipDescription();
+        //获取 lable
+        //String lable = clipDescription.getLabel().toString();
+        //获取 text
+        String text = clipData.getItemAt(0).getText().toString();
+		//返回
+		return text;
+	}
+
 	/*开放的api*/
 	//设置背景
 	public void setCanvasBackgroundColor(int color)
@@ -591,7 +696,7 @@ public class CodeEditorView extends View
 			//基础高度
 			float textHeight = mTextPaint.descent() - mTextPaint.ascent();
 			//判断行数
-			mCursorInLine = (int)Math.floor(textY / textHeight);
+			mCursorInLine = (int)Math.floor(textY / textHeight + 0.5);
 			checkCursorInLine();
 			mCursorPosition = 0;
 			//判断位置
@@ -664,7 +769,7 @@ public class CodeEditorView extends View
 		@Override
 		public void run()
 		{
-			
+
 		}
 	}
 
@@ -682,6 +787,31 @@ public class CodeEditorView extends View
 			appendText(p1.toString());
             return true;
         }
+
+		@Override
+		public boolean performContextMenuAction(int id)
+		{
+			switch (id)
+			{
+					//复制键
+				case android.R.id.copy:
+					break;
+
+					//粘贴键
+				case android.R.id.paste:
+					appendText(getClipboardText());
+					break;
+
+					//剪切键
+				case android.R.id.cut:
+					break;
+
+					//全选键
+				case android.R.id.selectAll:
+					break;
+			}
+			return true;
+		}
 
         @Override
         public boolean sendKeyEvent(KeyEvent event)
@@ -703,16 +833,18 @@ public class CodeEditorView extends View
 					//导航键
                 case KeyEvent.KEYCODE_DPAD_UP:
                     mCursorInLine --;
+					checkCursorInLine();
                     checkCursorPosition();
-                    checkCursorInLine();
+					jumpToCursor();
 					mClickTime = System.currentTimeMillis();
                     invalidate();
                     break;
 
                 case KeyEvent.KEYCODE_DPAD_DOWN:
                     mCursorInLine ++;
-                    checkCursorPosition();
                     checkCursorInLine();
+                    checkCursorPosition();
+					jumpToCursor();
 					mClickTime = System.currentTimeMillis();
                     invalidate();
                     break;
@@ -721,6 +853,7 @@ public class CodeEditorView extends View
                     mCursorPosition ++;
                     checkCursorInLine();
                     checkCursorPosition();
+					jumpToCursor();
 					mClickTime = System.currentTimeMillis();
                     invalidate();
                     break;
@@ -729,6 +862,7 @@ public class CodeEditorView extends View
                     mCursorPosition --;
                     checkCursorInLine();
                     checkCursorPosition();
+					jumpToCursor();
 					mClickTime = System.currentTimeMillis();
                     invalidate();
                     break;  
@@ -736,4 +870,5 @@ public class CodeEditorView extends View
             return true;
 		}
     }
+
 }

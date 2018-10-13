@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.util.Log;
 import java.io.BufferedReader;
 import java.io.FileReader;
+import android.widget.VideoView;
 
 public class MainActivity extends Activity 
 {
@@ -13,7 +14,6 @@ public class MainActivity extends Activity
     {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
-
 
         CodeEditorView cev = (CodeEditorView)findViewById(R.id.a);
         cev.setText(readFileString("/storage/emulated/0/AppProjects/CodeEditorView/CodeView/app/src/main/java/com/summerain/widget/CodeEditorView.java"));
